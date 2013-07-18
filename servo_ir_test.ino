@@ -3,6 +3,35 @@
 #include <ZumoReflectanceSensorArray.h>
 #include <SoftwareServo.h> 
 
+/************* MOTORS ****************/
+
+ZumoMotors motors;
+
+int left_speed = 0, right_speed = 0;
+void run_motors(int left, int right) {
+  int dr, dl;
+  if(left > left_speed) {
+    dl = 1;
+  } else {
+    dl = -1;
+  }
+  if(right > right_speed) {
+    dr = 1;
+  } else {
+    dr = -1;
+  }
+  
+  while(dr != 0 || dl != 0) {
+    if(right_speed == right) dr = 0;
+    if(left_speed == left) dl = 0;
+    right_speed += dr;
+    left_speed += dl;
+    motors.setLeftSpeed(left_speed);
+    motors.setRightSpeed(right_speed);
+    delay(2);
+  }
+}
+
 /*********** REFLECTANCE ARRAY ************/
 
 ZumoReflectanceSensorArray reflectanceSensors;
@@ -59,7 +88,51 @@ int read_reflectance()
   }
   Serial.print("    ");
   Serial.println(position);
+
+  return position;
   
+}
+
+unsigned int last_proportional=0;
+long integral=0;
+
+void pid_line_follower()
+{
+
+  // The "proportional" term should be 0 when we are on the line.
+  int proportional = read_reflectance() - 2500;
+
+  // Compute the derivative (change) and integral (sum) of the
+  // position.
+  int derivative = proportional - last_proportional;
+  integral += proportional;
+
+  // Remember the last position.
+  last_proportional = proportional;
+
+  // Compute the difference between the two motor power settings,
+  // m1 - m2.  If this is a positive number the zumo will turn
+  // to the right.  If it is a negative number, the robot will
+  // turn to the left, and the magnitude of the number determines
+  // the sharpness of the turn.
+  int power_difference = proportional/5 + integral/10000 + derivative*3/2;
+
+  // Compute the actual motor settings.  We never set either motor
+  // to a negative value.
+  const int max = 400;
+  if(power_difference > max) {
+    power_difference = max;
+  }
+  else if(power_difference < -max) {
+    power_difference = -max;
+  }
+
+  if(power_difference < 0) {
+    run_motors(max+power_difference, max);
+  }
+  else {
+    run_motors(max, max+power_difference);
+  }
 }
 
  
@@ -111,34 +184,6 @@ int sense_ping() {
   else return true;
 }
 
-/************* MOTORS ****************/
-
-ZumoMotors motors;
-
-int left_speed = 0, right_speed = 0;
-void run_motors(int left, int right) {
-  int dr, dl;
-  if(left > left_speed) {
-    dl = 1;
-  } else {
-    dl = -1;
-  }
-  if(right > right_speed) {
-    dr = 1;
-  } else {
-    dr = -1;
-  }
-  
-  while(dr != 0 || dl != 0) {
-    if(right_speed == right) dr = 0;
-    if(left_speed == left) dl = 0;
-    right_speed += dr;
-    left_speed += dl;
-    motors.setLeftSpeed(left_speed);
-    motors.setRightSpeed(right_speed);
-    delay(2);
-  }
-}
 
 
 
@@ -154,8 +199,7 @@ void setup() {
 
   motors.flipRightMotor(true); // I messed up the build D:
 
-  // Turn on reflectance array but don't use the LED indicator
-  reflectanceSensors.init(QTR_NO_EMITTER_PIN);
+  reflectanceSensors.init();
 
   calibrate_reflectance();
 }
@@ -261,5 +305,4 @@ void loop() {
         }
         break;
   }
-      
 }
